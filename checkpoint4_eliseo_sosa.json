@@ -2340,6 +2340,7 @@
       "parameters": {
         "authentication": "oAuth2",
         "resource": "person",
+        "operation": "create",
         "name": "={{ $('Payload limpio y validado (CRM)').item.json.nombre_completo }}",
         "additionalFields": {
           "email": [
@@ -2367,12 +2368,14 @@
     {
       "parameters": {
         "resource": "draft",
+        "operation": "create",
         "subject": "={{ /^re:/i.test($('Payload limpio y validado (CRM)').item.json.asunto) ? $('Payload limpio y validado (CRM)').item.json.asunto : 'Re: ' + $('Payload limpio y validado (CRM)').item.json.asunto }}",
         "message": "={{ $('Payload limpio y validado (CRM)').item.json.respuesta_borrador }}",
         "options": {
           "threadId": "={{ $('Payload limpio y validado (CRM)').item.json.thread_id }}",
           "sendTo": "={{ $('Payload limpio y validado (CRM)').item.json.email }}"
-        }
+        },
+        "emailType": "text"
       },
       "id": "bfffaf24-eaae-46cf-a451-8251b810d4c2",
       "name": "Crear borrador de respuesta (Create Draft · HITL)",
@@ -2535,7 +2538,8 @@
         "additionalFields": {
           "exactMatch": true,
           "fields": "email"
-        }
+        },
+        "returnAll": false
       },
       "id": "73594f65-f37d-496b-b243-9c963c1882ea",
       "name": "Buscar contacto en Pipedrive (Look up)",
@@ -2559,6 +2563,7 @@
       "parameters": {
         "authentication": "oAuth2",
         "resource": "note",
+        "operation": "create",
         "content": "={{ $('Payload limpio y validado (CRM)').item.json.nota_crm }}",
         "additionalFields": {
           "person_id": "={{ $json.id }}"
@@ -2582,7 +2587,47 @@
       "notes": "Deja el estado del caso y la accion requerida como nota en la ficha de la persona."
     }
   ],
-  "pinData": {},
+  "pinData": {
+    "Casilla de soporte (Gmail Trigger)": [
+      {
+        "json": {
+          "id": "19a3f1c2d4e5f607",
+          "threadId": "19a3f1c2d4e5f607",
+          "labelIds": [
+            "UNREAD",
+            "INBOX"
+          ],
+          "headers": {
+            "from": "From: Carolina Mendez <c.mendez@distribuidoraandes.com.ar>",
+            "subject": "Subject: Automatizar carga de pedidos de WhatsApp"
+          },
+          "from": {
+            "value": [
+              {
+                "address": "c.mendez@distribuidoraandes.com.ar",
+                "name": "Carolina Mendez"
+              }
+            ],
+            "text": "Carolina Mendez <c.mendez@distribuidoraandes.com.ar>"
+          },
+          "to": {
+            "value": [
+              {
+                "address": "soporte@tienda.com",
+                "name": ""
+              }
+            ],
+            "text": "soporte@tienda.com"
+          },
+          "subject": "Automatizar carga de pedidos de WhatsApp",
+          "text": "Hola, somos una distribuidora de 40 empleados en Mendoza. Recibimos como 200 pedidos por WhatsApp por dia y los cargamos a mano en el sistema, es un desastre. Quiero ver si se puede automatizar con IA. Soy la gerenta de operaciones y necesitamos tenerlo andando antes de fin de ano. Presupuesto tenemos, pero quiero entender bien el alcance primero.\n\nCarolina Mendez\nGerenta de Operaciones",
+          "html": "<div>Hola, somos una distribuidora de 40 empleados en Mendoza...</div>",
+          "date": "2026-09-21T18:00:00.000Z",
+          "messageId": "<CAF=demo@mail.gmail.com>"
+        }
+      }
+    ]
+  },
   "connections": {
     "Datos del lead": {
       "main": [
@@ -3087,8 +3132,7 @@
             "type": "main",
             "index": 0
           }
-        ],
-        []
+        ]
       ]
     },
     "Registrar nota del caso en CRM": {
