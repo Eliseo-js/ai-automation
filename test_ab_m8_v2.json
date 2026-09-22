@@ -1,0 +1,533 @@
+{
+  "name": "M8 · Test A/B v2 (con RAG vs sin RAG)",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        -880,
+        420
+      ],
+      "id": "8b2ad00c-e73f-49a3-804b-e10e604c6809",
+      "name": "Ejecutar test A/B"
+    },
+    {
+      "parameters": {
+        "jsCode": "const PREGUNTAS = [\n  {\n    \"caso_id\": \"Q1\",\n    \"tema\": \"Planes y precios\",\n    \"consulta\": \"Hola, quiero contratar el Plan Profesional. Cuanto sale por mes, cuantas ejecuciones incluye y cuanto tarda la implementacion?\",\n    \"contexto\": \"2.2 Planes vigentes. Todos los planes tienen un abono mensual y un costo unico de implementacion (setup). Los precios estan expresados en dolares estadounidenses y no incluyen IVA. Plan Profesional: incluye hasta 5 flujos y 1 agente de IA, hasta 10.000 ejecuciones por mes, soporte por email y reunion mensual de seguimiento. Abono mensual USD 450. Implementacion (setup) USD 1.800. Plazo de implementacion 4 semanas. | 2.3 Ejecuciones adicionales. Si un cliente supera las ejecuciones incluidas en su plan, cada bloque adicional de 1.000 ejecuciones se factura a USD 12 al cierre del mes. El cliente recibe un aviso por email al alcanzar el 80 % del limite.\",\n    \"respuesta_esperada\": \"USD 450 de abono mensual + USD 1.800 de setup, sin IVA; hasta 5 flujos y 1 agente, 10.000 ejecuciones/mes; 4 semanas de implementacion.\"\n  },\n  {\n    \"caso_id\": \"Q2\",\n    \"tema\": \"Canales y horarios de soporte\",\n    \"consulta\": \"Tengo el Plan Inicial y se me cayo el flujo un sabado a la manana. Los puedo escribir por WhatsApp? A que hora me contestan?\",\n    \"contexto\": \"4.1 Canales y horarios. Email soporte@nexoautomatizaciones.com: disponible para todos los planes, lunes a viernes de 9 a 18 h (hora de Argentina). WhatsApp de soporte: solo Plan Empresa, lunes a viernes de 9 a 18 h. Guardia para incidentes P1: solo Plan Empresa, todos los dias de 8 a 22 h. Los feriados nacionales de Argentina no se consideran dias habiles. Las consultas recibidas fuera de horario se atienden el siguiente dia habil, salvo los incidentes P1 del Plan Empresa. | 4.2 Prioridades y SLA. P1 Caida total: primera respuesta 2 horas habiles, resolucion objetivo 8 horas habiles.\",\n    \"respuesta_esperada\": \"No: WhatsApp y la guardia son exclusivos del Plan Empresa. Con Plan Inicial el canal es email, lunes a viernes de 9 a 18 h; un sabado no es dia habil, asi que se atiende el lunes.\"\n  },\n  {\n    \"caso_id\": \"Q3\",\n    \"tema\": \"Mora y suspension\",\n    \"consulta\": \"Me atrase 20 dias con la factura del abono. Me van a cortar el servicio? Si pago hoy, cuando vuelve a andar?\",\n    \"contexto\": \"5.2 Vencimientos y mora. Emision de la factura del abono: dia 1 de cada mes. Vencimiento: dia 10 de cada mes. Atraso de 1 a 14 dias: recordatorio por email, sin interrupcion del servicio. Atraso de 15 dias o mas: suspension de las automatizaciones, con aviso previo de 48 horas. Reactivacion: dentro de 1 dia habil desde la acreditacion del pago.\",\n    \"respuesta_esperada\": \"Con 20 dias de atraso (15 o mas) corresponde suspension de las automatizaciones, con aviso previo de 48 horas. Acreditado el pago, la reactivacion se completa dentro de 1 dia habil.\"\n  },\n  {\n    \"caso_id\": \"Q4\",\n    \"tema\": \"Pausa del servicio\",\n    \"consulta\": \"Estamos con poco trabajo unos meses. En vez de dar de baja, puedo pausar? Cuanto tendria que pagar y cuanto tarda volver?\",\n    \"contexto\": \"6.3 Pausa del servicio. En lugar de cancelar, el cliente puede pausar el servicio hasta 2 meses por ano calendario. Durante la pausa las automatizaciones quedan detenidas y se abona el 30 % del abono mensual para conservar la configuracion. La reactivacion se completa dentro de los 2 dias habiles posteriores al pedido. | 6.2 Cancelacion del abono. El cliente puede cancelar el abono mensual en cualquier momento, con un aviso escrito de 30 dias corridos. La cancelacion no tiene penalidad.\",\n    \"respuesta_esperada\": \"Si: hasta 2 meses por ano calendario, pagando el 30 % del abono mensual para conservar la configuracion. La reactivacion se completa dentro de los 2 dias habiles posteriores al pedido.\"\n  },\n  {\n    \"caso_id\": \"Q5\",\n    \"tema\": \"Cancelacion y reembolso (dispara HITL)\",\n    \"consulta\": \"Quiero cancelar el servicio y que me devuelvan la plata del setup. Ya estamos en produccion hace 3 meses y no estoy conforme. Si no me lo reintegran voy a hacer el reclamo formal.\",\n    \"contexto\": \"6.2 Cancelacion del abono. El cliente puede cancelar el abono mensual en cualquier momento, con un aviso escrito de 30 dias corridos. La cancelacion no tiene penalidad. El setup no se reembolsa una vez iniciada la implementacion. Si la cancelacion se pide antes de iniciar la implementacion, se reintegra el 100 % del anticipo del setup. | 6.1 Garantia de funcionamiento. Durante los 30 dias corridos posteriores a la puesta en produccion, Nexo corrige sin costo cualquier defecto de los flujos entregados respecto de lo acordado en la propuesta.\",\n    \"respuesta_esperada\": \"La cancelacion se pide por escrito con 30 dias corridos de aviso y no tiene penalidad, pero el setup no se reembolsa una vez iniciada la implementacion. Ademas la garantia de 30 dias post go-live ya vencio. Caso de reembolso + reclamo formal: escalamiento obligatorio a humano.\"\n  }\n];\n\nreturn PREGUNTAS.map(p => ({ json: p }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -660,
+        420
+      ],
+      "id": "b1944116-26c4-409b-8fe5-6305cc10b3ba",
+      "name": "Banco de 5 preguntas (ground truth)"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SELECCIONAR: Base de Conocimiento Nexo (RAG · M5)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "consulta": "={{ $json.consulta }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "consulta",
+              "displayName": "consulta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        -440,
+        200
+      ],
+      "id": "2f7a5745-0911-4935-8937-e8178b1f3683",
+      "name": "Recuperar del manual (RAG · M5)",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst banco = $('Banco de 5 preguntas (ground truth)').all();\nreturn $input.all().map((it, i) => ({ json: Object.assign({}, banco[i].json, {\n  fragmentos: Number(it.json.fragmentos || 0),\n  contexto_rag: String(it.json.resultado || 'SIN_FRAGMENTOS_RELEVANTES')\n})}));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -220,
+        200
+      ],
+      "id": "69a8ee6a-168c-4036-a3c4-41ee929f4bb2",
+      "name": "Unir consulta + fragmentos"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=FRAGMENTOS RECUPERADOS DEL MANUAL:\n{{ $json.contexto_rag }}\n\nCONSULTA DEL CLIENTE:\n{{ $json.consulta }}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessagePromptTemplate",
+              "message": "Sos el agente de soporte al cliente de Nexo Automatizaciones, una consultora\nargentina que implementa automatizaciones en n8n y agentes de IA para pymes.\n\nTenes acceso a fragmentos recuperados del Manual de Atencion al Cliente y Politicas Comerciales\n(MAN-ATC-001 v2.1), que es la UNICA fuente de verdad sobre condiciones del servicio.\n\nReglas:\n- Respondé usando UNICAMENTE los fragmentos recuperados. Si un dato no esta ahi, no lo inventes:\n  decí que lo derivas a un especialista.\n- Si los fragmentos dicen SIN_FRAGMENTOS_RELEVANTES, respondé \"No se\" y ofrecé derivar la consulta.\n- Cita siempre la seccion del manual que figura en el fragmento que usaste, con el formato:\n  Fuente: MAN-ATC-001 v2.1, seccion X.Y.\n- Tono profesional, claro y breve (maximo 6 lineas).\n- Devolve solo el texto de la respuesta al cliente, sin encabezados ni comentarios."
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        0,
+        200
+      ],
+      "id": "74cf39f0-b1de-4e5d-84d0-c23f6a17995f",
+      "name": "Arquitectura A · Agente CON RAG",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 512
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        20,
+        420
+      ],
+      "id": "69af7df7-a61a-470c-9488-b1dab6193950",
+      "name": "Modelo Arquitectura A (Gemini)"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst prev = $('Unir consulta + fragmentos').all();\nreturn $input.all().map((it, i) => {\n  const b = prev[i].json;\n  return { json: {\n    caso_id: b.caso_id,\n    tema: b.tema,\n    consulta: b.consulta,\n    contexto: b.contexto,\n    respuesta_esperada: b.respuesta_esperada,\n    arquitectura: 'A',\n    arquitectura_nombre: 'A - Agente CON RAG (recuperacion del manual, Modulo 5)',\n    respuesta: String(it.json.text || it.json.output || ''),\n    fragmentos_recuperados: b.fragmentos,\n    intento: 1\n  }};\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        200
+      ],
+      "id": "0ee84a93-06e7-4dd5-a86f-d2ba443b4d8b",
+      "name": "Marcar corrida A"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=CONSULTA DEL CLIENTE:\n{{ $json.consulta }}",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessagePromptTemplate",
+              "message": "Sos el agente de soporte al cliente de Nexo Automatizaciones, una consultora\nargentina que implementa automatizaciones en n8n y agentes de IA para pymes.\n\nRespondé las consultas de clientes sobre planes y precios, ejecuciones incluidas, canales y horarios\nde soporte, tiempos de respuesta (SLA), facturacion y medios de pago, mora y suspension, garantia,\ncancelacion, pausa del servicio y tratamiento de datos.\n\nReglas:\n- Tono profesional, claro y breve (maximo 6 lineas).\n- Cita siempre la seccion del manual de politicas con el formato:\n  Fuente: MAN-ATC-001 v2.1, seccion X.Y.\n- Devolve solo el texto de la respuesta al cliente, sin encabezados ni comentarios."
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        0,
+        660
+      ],
+      "id": "d8f853b0-6ea3-4ad8-96fb-967daff5b008",
+      "name": "Arquitectura B · Agente SIN RAG"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 512
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        20,
+        880
+      ],
+      "id": "ec9e42ac-9b82-47f1-817c-04d8f081ff54",
+      "name": "Modelo Arquitectura B (Gemini)"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst banco = $('Banco de 5 preguntas (ground truth)').all();\nreturn $input.all().map((it, i) => {\n  const b = banco[i].json;\n  return { json: {\n    caso_id: b.caso_id,\n    tema: b.tema,\n    consulta: b.consulta,\n    contexto: b.contexto,\n    respuesta_esperada: b.respuesta_esperada,\n    arquitectura: 'B',\n    arquitectura_nombre: 'B - Agente SIN RAG (memoria parametrica)',\n    respuesta: String(it.json.text || it.json.output || ''),\n    fuentes_declaradas: '',\n    requiere_humano_agente: false,\n    intento: 1\n  }};\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        660
+      ],
+      "id": "0e202449-3b26-4cc8-9848-2e9a862c5a54",
+      "name": "Marcar corrida B"
+    },
+    {
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 2
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        60,
+        420
+      ],
+      "id": "c45f6400-a9f9-48aa-a7ec-26e16191e53a",
+      "name": "Unificar las 10 corridas"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SELECCIONAR: M8 - Supervisor QA (AI-as-a-Judge)"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "consulta": "={{ $json.consulta }}",
+            "contexto": "={{ $json.contexto }}",
+            "respuesta": "={{ $json.respuesta }}",
+            "arquitectura": "={{ $json.arquitectura }}",
+            "intento": "={{ 1 }}",
+            "caso_id": "={{ $json.caso_id }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "consulta",
+              "displayName": "consulta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "contexto",
+              "displayName": "contexto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "respuesta",
+              "displayName": "respuesta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "arquitectura",
+              "displayName": "arquitectura",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            },
+            {
+              "id": "intento",
+              "displayName": "intento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "number",
+              "removed": false
+            },
+            {
+              "id": "caso_id",
+              "displayName": "caso_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        300,
+        420
+      ],
+      "id": "ecc1f7a4-ff15-4f0a-bac4-f3b202310922",
+      "name": "Supervisor QA (Juez)"
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// ---- Parametros de coste (editables). Gemini 2.5 Flash, prompts <= 200k tokens ----\nconst PRECIO_IN  = 0.75 / 1000000;   // USD por token de entrada\nconst PRECIO_OUT = 3.00 / 1000000;   // USD por token de salida\nconst CHARS_POR_TOKEN = 4;           // estimador estandar\nconst SYS_AGENTE_A = 900;            // chars del system prompt del agente con RAG\nconst SYS_AGENTE_B = 620;            // chars del system prompt del agente sin RAG\nconst RAG_CHARS    = 1800;           // fragmentos recuperados por el RAG (Top-K 4)\nconst SYS_JUEZ     = 3100;           // chars del system prompt del Juez\n\nconst tok = (chars) => Math.round(chars / CHARS_POR_TOKEN);\nconst corridas = $('Unificar las 10 corridas').all();\n\nreturn $input.all().map((it, i) => {\n  const c = corridas[i].json;\n  const v = it.json;\n\n  // --- coste del agente ---\n  const agenteIn  = (c.arquitectura === 'A')\n      ? SYS_AGENTE_A + c.consulta.length + RAG_CHARS\n      : SYS_AGENTE_B + c.consulta.length;\n  // nota: RAG_CHARS es el promedio de los fragmentos recuperados (Top-K 4, Minimum Score 0.65)\n  const agenteOut = (c.respuesta || '').length;\n\n  // --- coste del Juez (1ra pasada, + 2da si hubo self-healing) ---\n  let juezIn  = SYS_JUEZ + c.consulta.length + (c.contexto || '').length + (c.respuesta || '').length;\n  let juezOut = 260; // salida JSON estructurada, tamano estable\n  let reintentoIn = 0, reintentoOut = 0;\n  if (v.autocorregido === true) {\n    reintentoIn  = 700 + c.consulta.length + (c.contexto || '').length + (c.respuesta || '').length;\n    reintentoOut = (v.respuesta_final || '').length;\n    juezIn  += SYS_JUEZ + c.consulta.length + (c.contexto || '').length + (v.respuesta_final || '').length;\n    juezOut += 260;\n  }\n\n  const tokensIn  = tok(agenteIn) + tok(juezIn) + tok(reintentoIn);\n  const tokensOut = tok(agenteOut) + tok(reintentoOut) + juezOut;\n  const coste = tokensIn * PRECIO_IN + tokensOut * PRECIO_OUT;\n\n  return { json: {\n    corrida: i + 1,\n    caso_id: c.caso_id,\n    tema: c.tema,\n    arquitectura: c.arquitectura,\n    exactitud_factual: v.exactitud_final,\n    veredicto: v.ruta,\n    categoria_error: v.categoria_error,\n    cita_verificada: v.cita_verificada === true,\n    autocorregido: v.autocorregido === true,\n    requirio_humano: v.requirio_humano === true,\n    tokens_in: tokensIn,\n    tokens_out: tokensOut,\n    coste_usd: Number(coste.toFixed(6)),\n    critica_del_juez: v.critica,\n    respuesta_del_agente: c.respuesta\n  }};\n});\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        540,
+        420
+      ],
+      "id": "7a12c977-7499-4ca5-a0a5-1b5b9ea2ab26",
+      "name": "Matriz A/B (10 corridas)"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst filas = $input.all().map(i => i.json);\nconst VOLUMEN = 1000;\n\nconst resumen = (letra) => {\n  const f = filas.filter(x => x.arquitectura === letra);\n  const n = f.length || 1;\n  const avg = (sel) => f.reduce((a, x) => a + (Number(sel(x)) || 0), 0) / n;\n  const pct = (sel) => Math.round(f.filter(sel).length / n * 100);\n  const errores = {};\n  f.forEach(x => { const k = x.categoria_error || 'SIN_ERROR';\n                   if (k !== 'SIN_ERROR') errores[k] = (errores[k] || 0) + 1; });\n  const top = Object.entries(errores).sort((a, b) => b[1] - a[1])\n                .map(([k, v]) => k + ' (' + v + ')').join(' | ') || 'sin errores';\n  const costeCorrida = avg(x => x.coste_usd);\n  return {\n    arquitectura: letra,\n    corridas: f.length,\n    precision_media: Number(avg(x => x.exactitud_factual).toFixed(2)),\n    pct_aceptado: pct(x => x.veredicto === 'ACEPTADO'),\n    pct_corregir: pct(x => x.veredicto === 'CORREGIR'),\n    pct_rechazado: pct(x => x.veredicto === 'RECHAZADO'),\n    pct_autonomia: pct(x => x.requirio_humano !== true),\n    pct_cita_verificada: pct(x => x.cita_verificada === true),\n    errores_frecuentes: top,\n    tokens_por_corrida: Math.round(avg(x => x.tokens_in + x.tokens_out)),\n    coste_por_corrida_usd: Number(costeCorrida.toFixed(6)),\n    coste_1000_ejecuciones_usd: Number((costeCorrida * VOLUMEN).toFixed(2))\n  };\n};\n\nconst A = resumen('A'), B = resumen('B');\nconst deltaPrecision = Number((A.precision_media - B.precision_media).toFixed(2));\nconst deltaCoste = Number((A.coste_1000_ejecuciones_usd - B.coste_1000_ejecuciones_usd).toFixed(2));\nconst COSTE_HUMANO_CASO = 3.50; // USD: 7 min de un agente L1 a USD 30/h\n\nconst humanosA = Math.round((100 - A.pct_autonomia) / 100 * VOLUMEN);\nconst humanosB = Math.round((100 - B.pct_autonomia) / 100 * VOLUMEN);\nconst totalA = A.coste_1000_ejecuciones_usd + humanosA * COSTE_HUMANO_CASO;\nconst totalB = B.coste_1000_ejecuciones_usd + humanosB * COSTE_HUMANO_CASO;\n\nreturn [{ json: {\n  A, B,\n  delta_precision: deltaPrecision,\n  delta_coste_llm_1000: deltaCoste,\n  coste_total_1000_A_usd: Number(totalA.toFixed(2)),\n  coste_total_1000_B_usd: Number(totalB.toFixed(2)),\n  ahorro_total_1000_usd: Number((totalB - totalA).toFixed(2)),\n  supuesto_coste_humano_por_caso_usd: COSTE_HUMANO_CASO,\n  casos_a_humano_por_1000: { A: humanosA, B: humanosB }\n}}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        780,
+        420
+      ],
+      "id": "c49e4a66-fb9a-4528-bf20-d3a3f8005027",
+      "name": "Dashboard consolidado + proyección"
+    },
+    {
+      "parameters": {
+        "content": "## M8 · Test A/B — Arquitectura A (con RAG) vs B (sin RAG)\n5 preguntas x 2 arquitecturas = **10 corridas**, todas juzgadas por el mismo Supervisor QA.\n\n**Variable independiente:** el acceso al manual MAN-ATC-001 v2.1.\nMismo modelo (Gemini 2.5 Flash), misma temperatura, mismo formato de respuesta pedido y\nel mismo Juez con la misma rúbrica. Solo cambia si el agente puede consultar la fuente.",
+        "height": 210,
+        "width": 560,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        140
+      ],
+      "id": "97424e00-f0c7-4986-85c5-d7fbcb09ccf8",
+      "name": "Nota 14"
+    },
+    {
+      "parameters": {
+        "content": "## ANTES DE CORRER\n1. Abrí el workflow del Módulo 5 (**base de conocimiento**) y ejecutá la ingesta:\n   el Simple Vector Store es **en memoria** y se vacía cuando reiniciás n8n.\n2. En `Recuperar del manual (RAG · M5)` elegí de la lista **Base de Conocimiento Nexo (RAG · M5)**.\n3. En `Supervisor QA (Juez)` elegí **M8 · Supervisor QA (AI-as-a-Judge)** (tiene que estar activo).\n4. Dale a **Execute workflow**. Cuando lleguen los avisos a Slack, tocá *Aprobar y enviar*\n   (si no respondés, la espera vence al minuto y la corrida sigue igual).",
+        "height": 240,
+        "width": 560,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -900,
+        620
+      ],
+      "id": "09fec84d-625a-4df1-84ab-1bba7475cdf0",
+      "name": "Nota 15"
+    },
+    {
+      "parameters": {
+        "content": "## Dashboard\n`Matriz A/B` = 10 filas con exactitud, veredicto, categoría de error, tokens y coste.\n`Dashboard consolidado` = precisión media por arquitectura, % de autonomía,\nerrores más frecuentes y **coste proyectado a 1.000 ejecuciones** (LLM + costo humano\nde los casos escalados). Capturá la vista de tabla de los dos nodos.",
+        "height": 200,
+        "width": 500,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        540,
+        120
+      ],
+      "id": "6a5adaae-2908-4fb9-80fa-2b59632578a2",
+      "name": "Nota 16"
+    }
+  ],
+  "connections": {
+    "Ejecutar test A/B": {
+      "main": [
+        [
+          {
+            "node": "Banco de 5 preguntas (ground truth)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Banco de 5 preguntas (ground truth)": {
+      "main": [
+        [
+          {
+            "node": "Recuperar del manual (RAG · M5)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Arquitectura B · Agente SIN RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recuperar del manual (RAG · M5)": {
+      "main": [
+        [
+          {
+            "node": "Unir consulta + fragmentos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unir consulta + fragmentos": {
+      "main": [
+        [
+          {
+            "node": "Arquitectura A · Agente CON RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo Arquitectura A (Gemini)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Arquitectura A · Agente CON RAG",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Arquitectura A · Agente CON RAG": {
+      "main": [
+        [
+          {
+            "node": "Marcar corrida A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo Arquitectura B (Gemini)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Arquitectura B · Agente SIN RAG",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Arquitectura B · Agente SIN RAG": {
+      "main": [
+        [
+          {
+            "node": "Marcar corrida B",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar corrida A": {
+      "main": [
+        [
+          {
+            "node": "Unificar las 10 corridas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Marcar corrida B": {
+      "main": [
+        [
+          {
+            "node": "Unificar las 10 corridas",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Unificar las 10 corridas": {
+      "main": [
+        [
+          {
+            "node": "Supervisor QA (Juez)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supervisor QA (Juez)": {
+      "main": [
+        [
+          {
+            "node": "Matriz A/B (10 corridas)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Matriz A/B (10 corridas)": {
+      "main": [
+        [
+          {
+            "node": "Dashboard consolidado + proyección",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

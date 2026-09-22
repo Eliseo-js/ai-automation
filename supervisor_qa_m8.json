@@ -1,0 +1,811 @@
+{
+  "name": "M8 · Supervisor QA (AI-as-a-Judge)",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "workflowInputs",
+        "workflowInputs": {
+          "values": [
+            {
+              "name": "consulta"
+            },
+            {
+              "name": "contexto"
+            },
+            {
+              "name": "respuesta"
+            },
+            {
+              "name": "arquitectura"
+            },
+            {
+              "name": "intento",
+              "type": "number"
+            },
+            {
+              "name": "caso_id"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -820,
+        340
+      ],
+      "id": "bd4ecd1a-f56c-4cc8-9bfa-01fd4668d5de",
+      "name": "Entrada del supervisor"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=CONSULTA DEL CLIENTE:\n{{ $json.consulta }}\n\nCONTEXTO DE REFERENCIA (Manual MAN-ATC-001 v2.1):\n{{ $json.contexto }}\n\nRESPUESTA PROPUESTA POR EL AGENTE (arquitectura {{ $json.arquitectura }}, intento {{ $json.intento }}):\n{{ $json.respuesta }}\n\nCalificá la respuesta propuesta segun la rubrica.",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessagePromptTemplate",
+              "message": "Sos el SUPERVISOR DE CALIDAD (AI-as-a-Judge) de Nexo Automatizaciones.\nTu unica funcion es auditar la respuesta que un agente de soporte le va a enviar a un cliente,\ncontrastandola contra el CONTEXTO DE REFERENCIA (extracto verbatim del Manual de Atencion al\nCliente y Politicas Comerciales MAN-ATC-001 v2.1, unica fuente de verdad).\n\nNO respondas la consulta del cliente. NO reescribas la respuesta. Solo calificas.\n\n# RUBRICA DE EXACTITUD FACTUAL (entero 1 a 5)\n5 = Todo dato afirmado (cifras, plazos, condiciones, alcance) esta respaldado literalmente por el\n    contexto de referencia, y la respuesta cita la seccion correcta del manual.\n4 = Todo dato afirmado es correcto, pero hay una omision menor no critica o la cita de la seccion\n    es imprecisa/esta ausente. No hay nada falso.\n3 = Mayormente correcta pero omite una condicion que cambia la decision del cliente\n    (ej. da el precio pero omite que no incluye IVA, o da el SLA pero omite que es en horas habiles).\n2 = Contiene al menos una afirmacion concreta que el contexto no respalda (dato inventado o\n    extrapolado), aunque el resto sea correcto.\n1 = Contradice el manual, inventa una politica o una cifra, o responde con total seguridad algo\n    que el contexto no cubre.\n\n# MAPEO DE RUTA (estado_veredicto)\nexactitud 5 o 4  -> \"ACEPTADO\"   (se envia al cliente de forma autonoma)\nexactitud 3      -> \"CORREGIR\"   (self-healing: el agente reintenta con tu critica)\nexactitud 2 o 1  -> \"RECHAZADO\"  (human-in-the-loop: se congela y se escala a un humano)\n\n# ANULACION POR POLITICA (tiene prioridad sobre el mapeo anterior)\nSin importar la exactitud, estado_veredicto DEBE ser \"RECHAZADO\" si la consulta del cliente\ninvolucra: devolucion o reembolso de dinero, reclamo legal o intimacion, cancelacion de contrato,\ndescuento o excepcion comercial no previsto, o cualquier compromiso economico.\nEn ese caso poné categoria_error = \"ESCALAMIENTO_OBLIGATORIO\" y en critica explica que la ruta es\npor politica de riesgo, no por un error del agente. La exactitud_factual se califica igual con la rubrica.\n\n# CATEGORIAS DE ERROR (elegi exactamente una)\nSIN_ERROR                 : nada que corregir.\nALUCINACION               : afirma un dato que el contexto no contiene.\nOMISION_CRITICA           : omite una condicion que cambia la decision del cliente.\nDATO_INCOMPLETO           : responde parcialmente y deja la consulta sin cerrar.\nFUERA_DE_ALCANCE          : responde algo que el manual no cubre en vez de derivar.\nFALTA_DE_CITA             : el contenido es correcto pero no cita la seccion del manual.\nESCALAMIENTO_OBLIGATORIO  : la ruta viene de la anulacion por politica.\n\n# REGLAS DURAS\n- Si la respuesta dice que no tiene el dato y ofrece derivar, eso NO es alucinacion: exactitud 4.\n- Una cifra correcta con la seccion equivocada es FALTA_DE_CITA, no ALUCINACION.\n- Juzga solo contra el contexto de referencia, nunca contra tu conocimiento general.\n- critica: maximo 2 frases, en español, dirigida al agente, indicando que cambiar concretamente.\n- Devolve UNICAMENTE el objeto JSON del esquema. Sin texto antes ni despues."
+            }
+          ]
+        },
+        "hasOutputParser": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        -580,
+        340
+      ],
+      "id": "1a687f52-e477-464f-a8e8-c7690a74e2d0",
+      "name": "Juez QA · 1ra pasada"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0,
+          "maxOutputTokens": 1024
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        -620,
+        600
+      ],
+      "id": "76cc09a6-e7ef-453e-918b-5b74dd48b327",
+      "name": "Modelo del Juez (Gemini)"
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"exactitud_factual\": {\n      \"type\": \"integer\",\n      \"minimum\": 1,\n      \"maximum\": 5,\n      \"description\": \"Puntaje 1 a 5 segun la rubrica de exactitud factual contra el contexto de referencia\"\n    },\n    \"estado_veredicto\": {\n      \"type\": \"string\",\n      \"enum\": [\"ACEPTADO\", \"CORREGIR\", \"RECHAZADO\"],\n      \"description\": \"Ruta de decision: ACEPTADO envia al cliente, CORREGIR reintenta, RECHAZADO escala a humano\"\n    },\n    \"categoria_error\": {\n      \"type\": \"string\",\n      \"enum\": [\"SIN_ERROR\", \"ALUCINACION\", \"OMISION_CRITICA\", \"DATO_INCOMPLETO\", \"FUERA_DE_ALCANCE\", \"FALTA_DE_CITA\", \"ESCALAMIENTO_OBLIGATORIO\"],\n      \"description\": \"Categoria unica del error detectado\"\n    },\n    \"critica\": {\n      \"type\": \"string\",\n      \"description\": \"Maximo 2 frases indicandole al agente que cambiar concretamente\"\n    },\n    \"cita_verificada\": {\n      \"type\": \"boolean\",\n      \"description\": \"true si la respuesta cita una seccion del manual y la cita es correcta\"\n    }\n  },\n  \"required\": [\"exactitud_factual\", \"estado_veredicto\", \"categoria_error\", \"critica\", \"cita_verificada\"]\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        -400,
+        600
+      ],
+      "id": "d587164f-a12c-48d8-9ec5-1f45a29a3bd5",
+      "name": "Esquema JSON forzado del veredicto"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({\n  caso_id: $('Entrada del supervisor').item.json.caso_id,\n  arquitectura: $('Entrada del supervisor').item.json.arquitectura,\n  intento: Number($('Entrada del supervisor').item.json.intento || 1),\n  consulta: $('Entrada del supervisor').item.json.consulta,\n  contexto: $('Entrada del supervisor').item.json.contexto,\n  respuesta: $('Entrada del supervisor').item.json.respuesta,\n  exactitud_factual: Number($json.exactitud_factual),\n  estado_veredicto: String($json.estado_veredicto || '').toUpperCase().trim(),\n  categoria_error: String($json.categoria_error || 'SIN_ERROR').toUpperCase().trim(),\n  critica: $json.critica,\n  cita_verificada: $json.cita_verificada === true,\n  evaluado_en: $now.toISO()\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -320,
+        340
+      ],
+      "id": "8314b7d3-527b-4757-a1cd-98adae375d97",
+      "name": "Normalizar veredicto"
+    },
+    {
+      "parameters": {
+        "resource": "record",
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SELECCIONAR BASE"
+        },
+        "table": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "Auditoria_QA"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "caso_id": "={{ $json.caso_id }}",
+            "arquitectura": "={{ $json.arquitectura }}",
+            "intento": "={{ $json.intento }}",
+            "consulta": "={{ $json.consulta }}",
+            "respuesta": "={{ $json.respuesta }}",
+            "exactitud_factual": "={{ $json.exactitud_factual }}",
+            "estado_veredicto": "={{ $json.estado_veredicto }}",
+            "categoria_error": "={{ $json.categoria_error }}",
+            "critica": "={{ $json.critica }}",
+            "cita_verificada": "={{ $json.cita_verificada }}",
+            "evaluado_en": "={{ $json.evaluado_en }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -80,
+        560
+      ],
+      "id": "11f324ce-b327-463c-91fc-3c0db47d6d37",
+      "name": "Auditoría · registrar veredicto",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8685a524-61fa-4260-b1ee-9eef5c69476b",
+                    "leftValue": "={{ $json.estado_veredicto }}",
+                    "rightValue": "ACEPTADO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "ACEPTADO · autónomo"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "f967fcde-bf98-45c8-a016-807bd7fcfae4",
+                    "leftValue": "={{ $json.estado_veredicto }}",
+                    "rightValue": "CORREGIR",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "CORREGIR · self-healing"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "7f359638-b6c9-4d31-853a-a26eeb5da213",
+                    "leftValue": "={{ $json.estado_veredicto }}",
+                    "rightValue": "RECHAZADO",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "RECHAZADO · HITL"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -80,
+        340
+      ],
+      "id": "3000be97-ce7f-459c-a7b9-c81670cacc89",
+      "name": "Ruta según veredicto"
+    },
+    {
+      "parameters": {
+        "resource": "draft",
+        "operation": "create",
+        "subject": "=Re: tu consulta a Nexo Automatizaciones [{{ $json.caso_id }}]",
+        "emailType": "text",
+        "message": "={{ $json.respuesta }}\n\n---\nQA automatizado: exactitud {{ $json.exactitud_factual }}/5 · veredicto {{ $json.estado_veredicto }} · arquitectura {{ $json.arquitectura }}",
+        "options": {
+          "sendTo": "pablo.sosaribicich@gmail.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        180,
+        60
+      ],
+      "id": "aaa619d4-fa77-446c-a182-6ae7d29ecc2b",
+      "name": "Salida real · Borrador Gmail",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(Object.assign({}, $('Ruta según veredicto').item.json, {\n  ruta: 'ACEPTADO',\n  accion_ejecutada: 'Borrador Gmail creado + veredicto registrado en Airtable',\n  respuesta_final: $('Ruta según veredicto').item.json.respuesta,\n  exactitud_final: $('Ruta según veredicto').item.json.exactitud_factual,\n  autocorregido: false,\n  requirio_humano: false\n})) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        60
+      ],
+      "id": "0be3854b-28bf-4934-ad4e-12baa21d65e5",
+      "name": "Resultado ACEPTADO"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "d1a8553a-3562-42ac-8fb2-f897a646db3e",
+              "leftValue": "={{ $json.intento }}",
+              "rightValue": 2,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        180,
+        340
+      ],
+      "id": "79233ba1-9b75-482b-8ac2-dada08569390",
+      "name": "¿Quedan reintentos? (intento < 2)"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=CONSULTA DEL CLIENTE:\n{{ $json.consulta }}\n\nCONTEXTO DE REFERENCIA (Manual MAN-ATC-001 v2.1):\n{{ $json.contexto }}\n\nTU RESPUESTA ANTERIOR (rechazada):\n{{ $json.respuesta }}\n\nCRITICA DEL SUPERVISOR (exactitud {{ $json.exactitud_factual }}/5, categoria {{ $json.categoria_error }}):\n{{ $json.critica }}\n\nReescribí la respuesta corrigiendo lo senalado.",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessagePromptTemplate",
+              "message": "Sos el agente de soporte de Nexo Automatizaciones en modo AUTOCORRECCION.\nTu respuesta anterior fue rechazada por el supervisor de calidad. Reescribila corrigiendo\nexactamente lo que senala la critica.\n\nReglas:\n- Usa UNICAMENTE el contexto de referencia que te paso. Si un dato no esta ahi, decí que lo derivas\n  a un especialista; nunca lo inventes.\n- Cita siempre la seccion del manual entre las que aparecen en el contexto,\n  con el formato: Fuente: MAN-ATC-001 v2.1, seccion X.Y.\n- Tono profesional, claro y breve (maximo 6 lineas).\n- Devolve solo el texto de la respuesta al cliente, sin encabezados ni comentarios."
+            }
+          ]
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        400,
+        260
+      ],
+      "id": "44ae3270-b7b4-43d0-ba5a-bf4c97e2050f",
+      "name": "Agente · reintento con la crítica"
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {
+          "temperature": 0.2,
+          "maxOutputTokens": 512
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.1,
+      "position": [
+        420,
+        500
+      ],
+      "id": "7f61dbac-2fc4-4f31-8362-308284ec3364",
+      "name": "Modelo del Agente (Gemini)"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=CONSULTA DEL CLIENTE:\n{{ $('Normalizar veredicto').item.json.consulta }}\n\nCONTEXTO DE REFERENCIA (Manual MAN-ATC-001 v2.1):\n{{ $('Normalizar veredicto').item.json.contexto }}\n\nRESPUESTA PROPUESTA POR EL AGENTE (arquitectura {{ $('Normalizar veredicto').item.json.arquitectura }}, intento 2 - autocorregida):\n{{ $json.text }}\n\nCalificá la respuesta propuesta segun la rubrica.",
+        "messages": {
+          "messageValues": [
+            {
+              "type": "SystemMessagePromptTemplate",
+              "message": "Sos el SUPERVISOR DE CALIDAD (AI-as-a-Judge) de Nexo Automatizaciones.\nTu unica funcion es auditar la respuesta que un agente de soporte le va a enviar a un cliente,\ncontrastandola contra el CONTEXTO DE REFERENCIA (extracto verbatim del Manual de Atencion al\nCliente y Politicas Comerciales MAN-ATC-001 v2.1, unica fuente de verdad).\n\nNO respondas la consulta del cliente. NO reescribas la respuesta. Solo calificas.\n\n# RUBRICA DE EXACTITUD FACTUAL (entero 1 a 5)\n5 = Todo dato afirmado (cifras, plazos, condiciones, alcance) esta respaldado literalmente por el\n    contexto de referencia, y la respuesta cita la seccion correcta del manual.\n4 = Todo dato afirmado es correcto, pero hay una omision menor no critica o la cita de la seccion\n    es imprecisa/esta ausente. No hay nada falso.\n3 = Mayormente correcta pero omite una condicion que cambia la decision del cliente\n    (ej. da el precio pero omite que no incluye IVA, o da el SLA pero omite que es en horas habiles).\n2 = Contiene al menos una afirmacion concreta que el contexto no respalda (dato inventado o\n    extrapolado), aunque el resto sea correcto.\n1 = Contradice el manual, inventa una politica o una cifra, o responde con total seguridad algo\n    que el contexto no cubre.\n\n# MAPEO DE RUTA (estado_veredicto)\nexactitud 5 o 4  -> \"ACEPTADO\"   (se envia al cliente de forma autonoma)\nexactitud 3      -> \"CORREGIR\"   (self-healing: el agente reintenta con tu critica)\nexactitud 2 o 1  -> \"RECHAZADO\"  (human-in-the-loop: se congela y se escala a un humano)\n\n# ANULACION POR POLITICA (tiene prioridad sobre el mapeo anterior)\nSin importar la exactitud, estado_veredicto DEBE ser \"RECHAZADO\" si la consulta del cliente\ninvolucra: devolucion o reembolso de dinero, reclamo legal o intimacion, cancelacion de contrato,\ndescuento o excepcion comercial no previsto, o cualquier compromiso economico.\nEn ese caso poné categoria_error = \"ESCALAMIENTO_OBLIGATORIO\" y en critica explica que la ruta es\npor politica de riesgo, no por un error del agente. La exactitud_factual se califica igual con la rubrica.\n\n# CATEGORIAS DE ERROR (elegi exactamente una)\nSIN_ERROR                 : nada que corregir.\nALUCINACION               : afirma un dato que el contexto no contiene.\nOMISION_CRITICA           : omite una condicion que cambia la decision del cliente.\nDATO_INCOMPLETO           : responde parcialmente y deja la consulta sin cerrar.\nFUERA_DE_ALCANCE          : responde algo que el manual no cubre en vez de derivar.\nFALTA_DE_CITA             : el contenido es correcto pero no cita la seccion del manual.\nESCALAMIENTO_OBLIGATORIO  : la ruta viene de la anulacion por politica.\n\n# REGLAS DURAS\n- Si la respuesta dice que no tiene el dato y ofrece derivar, eso NO es alucinacion: exactitud 4.\n- Una cifra correcta con la seccion equivocada es FALTA_DE_CITA, no ALUCINACION.\n- Juzga solo contra el contexto de referencia, nunca contra tu conocimiento general.\n- critica: maximo 2 frases, en español, dirigida al agente, indicando que cambiar concretamente.\n- Devolve UNICAMENTE el objeto JSON del esquema. Sin texto antes ni despues."
+            }
+          ]
+        },
+        "hasOutputParser": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.7,
+      "position": [
+        620,
+        260
+      ],
+      "id": "c6609d71-6c4a-4dcc-b95e-87829306fba5",
+      "name": "Juez QA · 2da pasada"
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify({\n  caso_id: $('Normalizar veredicto').item.json.caso_id,\n  arquitectura: $('Normalizar veredicto').item.json.arquitectura,\n  intento: 2,\n  consulta: $('Normalizar veredicto').item.json.consulta,\n  contexto: $('Normalizar veredicto').item.json.contexto,\n  respuesta: $('Agente · reintento con la crítica').item.json.text,\n  exactitud_factual: Number($json.exactitud_factual),\n  estado_veredicto: String($json.estado_veredicto || '').toUpperCase().trim(),\n  categoria_error: String($json.categoria_error || 'SIN_ERROR').toUpperCase().trim(),\n  critica: $json.critica,\n  cita_verificada: $json.cita_verificada === true,\n  evaluado_en: $now.toISO()\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        860,
+        260
+      ],
+      "id": "a8b1b037-7e36-4634-897d-e4d9e7c8887a",
+      "name": "Normalizar veredicto (reintento)"
+    },
+    {
+      "parameters": {
+        "resource": "record",
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SELECCIONAR BASE"
+        },
+        "table": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "Auditoria_QA"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "caso_id": "={{ $json.caso_id }}",
+            "arquitectura": "={{ $json.arquitectura }}",
+            "intento": "={{ $json.intento }}",
+            "consulta": "={{ $json.consulta }}",
+            "respuesta": "={{ $json.respuesta }}",
+            "exactitud_factual": "={{ $json.exactitud_factual }}",
+            "estado_veredicto": "={{ $json.estado_veredicto }}",
+            "categoria_error": "={{ $json.categoria_error }}",
+            "critica": "={{ $json.critica }}",
+            "cita_verificada": "={{ $json.cita_verificada }}",
+            "evaluado_en": "={{ $json.evaluado_en }}"
+          },
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1080,
+        400
+      ],
+      "id": "e4cc45e1-9c6d-4265-9930-a147bd99418d",
+      "name": "Auditoría · registrar reintento",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(Object.assign({}, $json, {\n  ruta: 'CORREGIR',\n  accion_ejecutada: 'Self-healing: el agente reintentó con la crítica del Juez (1 reintento, límite alcanzado)',\n  respuesta_final: $json.respuesta,\n  exactitud_inicial: $('Normalizar veredicto').item.json.exactitud_factual,\n  exactitud_final: $json.exactitud_factual,\n  autocorregido: true,\n  requirio_humano: $json.estado_veredicto === 'RECHAZADO'\n})) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1080,
+        180
+      ],
+      "id": "98abbdba-5a1d-44b8-93c3-0f98db68f610",
+      "name": "Resultado CORREGIDO"
+    },
+    {
+      "parameters": {
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SELECCIONAR CANAL"
+        },
+        "message": "=:rotating_light: *QA bloqueó una respuesta automática*\n*Caso:* {{ $json.caso_id }}  ·  *Arquitectura:* {{ $json.arquitectura }}\n*Exactitud del Juez:* {{ $json.exactitud_factual }}/5  ·  *Categoría:* {{ $json.categoria_error }}\n\n*Consulta del cliente:*\n> {{ $json.consulta }}\n\n*Respuesta propuesta:*\n> {{ $json.respuesta }}\n\n*Crítica del Juez:*\n> {{ $json.critica }}\n\nAprobá para enviarla tal cual, o Editar para tomarla a mano.",
+        "responseType": "approval",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Aprobar y enviar",
+            "buttonApprovalStyle": "primary",
+            "disapproveLabel": "Editar a mano",
+            "buttonDisapprovalStyle": "secondary"
+          }
+        },
+        "options": {
+          "limitWaitTime": {
+            "values": {
+              "limitType": "afterTimeInterval",
+              "resumeAmount": 1,
+              "resumeUnit": "minutes"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        400,
+        700
+      ],
+      "id": "e9b1a094-42fb-48b8-8657-6a3eb29523a0",
+      "name": "Escalar a humano en Slack (Aprobar/Editar)",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={{ JSON.stringify(Object.assign({}, $('Ruta según veredicto').item.json, {\n  ruta: 'RECHAZADO',\n  accion_ejecutada: 'Ejecución congelada y escalada a Slack con botones Aprobar / Editar',\n  respuesta_final: null,\n  exactitud_final: $('Ruta según veredicto').item.json.exactitud_factual,\n  autocorregido: false,\n  requirio_humano: true,\n  decision_humana: $json.data ? ($json.data.approved === true ? 'APROBADA' : 'EDITAR A MANO') : 'SIN RESPUESTA (venció el límite de espera)'\n})) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        620,
+        700
+      ],
+      "id": "5847228a-b164-4114-96c7-a9fbd333ec42",
+      "name": "Resultado ESCALADO"
+    },
+    {
+      "parameters": {
+        "content": "## M8 · Supervisor QA (AI-as-a-Judge)\nSub-workflow llamado por el agente o por el harness de Test A/B.\n\n**Entrada:** `consulta`, `contexto` (extracto verbatim del manual MAN-ATC-001 v2.1),\n`respuesta` (la que propone el agente), `arquitectura` (A/B), `intento`, `caso_id`.\n\n**Salida:** siempre el mismo contrato: `ruta`, `exactitud_final`, `categoria_error`,\n`respuesta_final`, `autocorregido`, `requirio_humano`.",
+        "height": 240,
+        "width": 520,
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -840,
+        60
+      ],
+      "id": "a840732c-0f3f-4da7-8aa9-9a5775b8a2ed",
+      "name": "Nota 18"
+    },
+    {
+      "parameters": {
+        "content": "## 1 · Juez con salida JSON forzada\n`Basic LLM Chain` + `Structured Output Parser` en modo **Define using JSON Schema**.\nEl parser obliga al modelo a devolver exactamente `exactitud_factual` (1-5) y\n`estado_veredicto` (ACEPTADO|CORREGIR|RECHAZADO). Texto libre = Switch roto.\nTemperatura 0 para que la calificación sea reproducible.",
+        "height": 190,
+        "width": 460,
+        "color": 5
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        800
+      ],
+      "id": "160f4eb7-7c0c-4c41-a175-f4941b978797",
+      "name": "Nota 19"
+    },
+    {
+      "parameters": {
+        "content": "## 2 · Auditoría externa (rama paralela)\nTodo veredicto se escribe en Airtable ANTES de ramificar, en una rama paralela\npara que el log no contamine el ítem del camino principal.\nTabla `Auditoria_QA`.",
+        "height": 170,
+        "width": 380,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -320,
+        760
+      ],
+      "id": "1050bd15-d753-42dd-8fd6-1266ba4e4f7a",
+      "name": "Nota 20"
+    },
+    {
+      "parameters": {
+        "content": "## 3 · Switch de 3 rutas + fallback\nACEPTADO (exactitud >= 4) → salida real (borrador Gmail) + log.\nCORREGIR (exactitud = 3) → self-healing con LÍMITE de 1 reintento.\nRECHAZADO (exactitud <= 2, o anulación por política) → HITL en Slack.\nFallback → se trata como RECHAZADO: si el Juez devuelve algo inesperado,\nel caso va a un humano, nunca al cliente.",
+        "height": 210,
+        "width": 480,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        80,
+        880
+      ],
+      "id": "cdbfbce5-6ea8-4144-a095-2d6a93a47f4a",
+      "name": "Nota 21"
+    },
+    {
+      "parameters": {
+        "content": "## 4 · Self-healing acotado\nEl IF `intento < 2` es la salida del loop. Si el reintento vuelve a fallar,\n`requirio_humano` queda en true y el caso se marca para revisión.\nNunca hay auto-corrección infinita.",
+        "height": 160,
+        "width": 400,
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        20
+      ],
+      "id": "681c5d97-3aa2-4f85-89c3-c4a14a5724dd",
+      "name": "Nota 22"
+    },
+    {
+      "parameters": {
+        "content": "## 5 · Human-in-the-loop\n`Slack · Send and Wait for Response` con botones **Aprobar y enviar** / **Editar a mano**.\nLa ejecución queda congelada hasta que alguien decide.\n`Limit Wait Time = 1 minuto` para que la batería de pruebas A/B no quede colgada.",
+        "height": 180,
+        "width": 420,
+        "color": 2
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        180,
+        900
+      ],
+      "id": "4ee319e1-8084-4ff8-b5fd-8f22b1836861",
+      "name": "Nota 23"
+    }
+  ],
+  "connections": {
+    "Entrada del supervisor": {
+      "main": [
+        [
+          {
+            "node": "Juez QA · 1ra pasada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo del Juez (Gemini)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Juez QA · 1ra pasada",
+            "type": "ai_languageModel",
+            "index": 0
+          },
+          {
+            "node": "Juez QA · 2da pasada",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Modelo del Agente (Gemini)": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agente · reintento con la crítica",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Esquema JSON forzado del veredicto": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Juez QA · 1ra pasada",
+            "type": "ai_outputParser",
+            "index": 0
+          },
+          {
+            "node": "Juez QA · 2da pasada",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Juez QA · 1ra pasada": {
+      "main": [
+        [
+          {
+            "node": "Normalizar veredicto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar veredicto": {
+      "main": [
+        [
+          {
+            "node": "Ruta según veredicto",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Auditoría · registrar veredicto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ruta según veredicto": {
+      "main": [
+        [
+          {
+            "node": "Salida real · Borrador Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "¿Quedan reintentos? (intento < 2)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escalar a humano en Slack (Aprobar/Editar)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escalar a humano en Slack (Aprobar/Editar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Salida real · Borrador Gmail": {
+      "main": [
+        [
+          {
+            "node": "Resultado ACEPTADO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "¿Quedan reintentos? (intento < 2)": {
+      "main": [
+        [
+          {
+            "node": "Agente · reintento con la crítica",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escalar a humano en Slack (Aprobar/Editar)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agente · reintento con la crítica": {
+      "main": [
+        [
+          {
+            "node": "Juez QA · 2da pasada",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Juez QA · 2da pasada": {
+      "main": [
+        [
+          {
+            "node": "Normalizar veredicto (reintento)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar veredicto (reintento)": {
+      "main": [
+        [
+          {
+            "node": "Resultado CORREGIDO",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Auditoría · registrar reintento",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalar a humano en Slack (Aprobar/Editar)": {
+      "main": [
+        [
+          {
+            "node": "Resultado ESCALADO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
